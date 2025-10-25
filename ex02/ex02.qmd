@@ -1,0 +1,131 @@
+---
+title: "Exercise 02: Classification with LDA/QDA"
+format: html
+editor: visual
+---
+
+```{r}
+library(ggplot2) # for visualisation
+library(MASS) # for LDA nd QDA
+library(pROC)
+library(glmnet)
+setwd("/Users/ninaimmenroth/Data Science/ML2/R-Exercises/ex02")
+```
+
+# 2 Bayes Classifier
+
+## 2.1 Bayes Classifier by hand
+
+Let Y be a random variable, which takes the values 0 or 1, dependent on a predictor variable x. Assume that, if Y =0 then X\|Y =0 is N(4, 1) distributed, and if Y =1 then X\|Y =1 is N(5, 1) distributed. The prior probabilities, when x is unknown, are P(Y =0) = P(Y =1) = 0.5
+
+Tasks:
+
+a\) Write down the formula for ϕ0(x), the density of X\|Y =0 and for ϕ1(x), the density of X\|Y =1. Hint: The general formula for a normal distribution can be found here: https://en.wikipedia.org/wiki/Normal_distribution.
+
+insert photo?
+
+## 2.2 Posterior function in R
+
+Use your answer from Exercise 1 Part (b) to write an R function called posterior to compute the posterior probability of P(Y =1\|x). You will start by assuming the same model as in Ex 1, and then generalize it to general π0, µ0, µ1 and σ.
+
+a\) You can use the function dnorm(x, mean =, sd = ) to compute the density of a normal distribution. x should be an argument to the function posterior so your function should use the following template:
+
+```{r}
+posterior <- function(x){
+  py1 <- dnorm(x, mean = 5, sd = 1) / (dnorm(x, mean = 5, sd = 1) + dnorm(x, mean = 4, sd = 1))
+  return(py1)
+}
+```
+
+b\) Plot the function using the R function curve() for x values from 0 to 8 so that you obtain
+
+```{r}
+curve(posterior, from = 0, to = 8)
+```
+
+In Exercise 1 you showed that the most-likely-outcome changes at the point x=4.5.
+
+c\) Use posterior(4.5) to find the posterior probability at x=4.5. Why is this result “obvious”?
+
+```{r}
+posterior(4.5)
+```
+
+d\) Now adapt you function posterior to accept the following function arguments with the given default values.
+
+-   pi0 is the prior probability P(Y =1) with default value 0.5
+
+-   mu0 and mu1 are the respective means for class 0 and class 1 with default values 4 and 5.
+
+-   sigma the variance (in both classes) with default value 1.
+
+```{r}
+posterior <- function(x, mu0 = 4, mu1 = 5, sigma = 1, pi0 = 0.5, pi1 = 1 - p0){
+  py1 <- dnorm(x, mean = mu1, sd = sigma) * pi1/ (dnorm(x, mean = mu1, sd = sigma) * pi1 + 
+                                               dnorm(x, mean = mu0, sd = sigma) * pi0)
+  return(py1)
+}
+```
+
+e\) Check that your function gives sensible results by plotting the function with different argument values. When the prior probability of Y=0 increases, the posterior probability curve is move to the right. If you want to use ggplot2::ggplot() instead of base R graphics use the following code:
+
+```{r}
+library(ggplot2)
+ggplot() +
+  geom_function(fun = posterior, 
+                args = list(mu0 = 4, 
+                            mu1 = 5, 
+                            sigma = 1, 
+                            pi0 = 0.8,
+                            pi1 = 0.3)) + 
+  scale_x_continuous(limits = c(0, 8))
+
+# with base R graphics this can be achieved via
+curve(posterior(x, pi0 = 0.5, pi1 = 0.5, mu0 = 4, mu1 = 5, sigma = 1),
+      from = 0, to = 8)
+```
+
+# 2.3 LDA and QDA with the Diabetes Data
+
+In this exercise we will work again with the Diabetes data set applied to classification by logistic regression. This week you will use linear and quadratic discriminant analysis. You will use the functions lda and qda from the MASS package.
+
+a\) Preparations: Download the Diabetes dataset and the R code ML2_02_LDA_QDA_Diabetes.R from Moodle.
+
+b\) You will use LDA and QDA. For using an LDA model with only one variable, e.g. Age use the following code:
+
+```{r}
+# 01: load data ----------------------------------------------------------------
+load(Diabetes.Rda)  # ??? stands for "path/Diabetes.Rda"
+
+# 02: Train/Test split ---------------------------------------------------------
+
+# Split the data into a train/test with 2000 observations in the test data set
+set.seed(50)
+n <- dim(Diabetes)[1]
+testidx <- sample(n, 2000)
+test <- Diabetes[testidx, ]
+train <- Diabetes[-testidx, ]
+
+table(train$YN)
+
+lda.fit1 <- lda(YN ~ Age, data = train)
+```
+
+To assess the classification quality use
+
+```{r}
+pr1test <- predict(lda.fit1, newdata=test)
+roc.obj1 <- roc(test$YN, pr1test$posterior[, 2])
+ggroc(roc.obj1)
+auc(roc.obj1)
+```
+
+c\) Adapt the code to fit the following discriminant models, each time plotting the ROC curve and the obtaining the AUC.
+
+• LDA model using BMI
+
+• LDA model using Age and BMI
+
+• QDA model using Age and BMI
+
+d\) Which model gives the best AUC on the test data? Compare the LDA/QDA model results also with a logistic regression model using Age and BMI. The given code in this exercise should be enough for you to fit the LDA and QDA models, but further help can be found in Labs 4.7.3 & 4.7.4 in James et. al.

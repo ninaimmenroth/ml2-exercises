@@ -1,0 +1,40 @@
+# R and RStudio
+.Rhistory
+.RData
+.Rproj.user/
+.Ruserdata
+
+# Quarto
+_site/
+_book/
+_quarto.yml
+*.utf8.md
+*.html
+*.pdf
+*.docx
+*.odt
+*.tex
+*.log
+*.aux
+*.toc
+*.out
+*.nav
+*.snm
+*.vrb
+*.run.xml
+
+# Quarto cache
+.quarto/
+
+# Mac system files
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Optional: Python cache if using reticulate or Python
+__pycache__/
+*.py[cod]

@@ -1,0 +1,431 @@
+---
+title: "Exercise 01: Imputing Missing Data in R"
+format: html
+editor: visual
+---
+
+## Ex 2: Tropical Atmosphere Ocean Data
+
+The tao data set is a small sub sample of the Tropical Atmosphere Ocean (TAO) project data, containing daily measurements at 5 locations, for two years; one El-Nino year and one LaNina year. The variables are:
+
+-   Year
+
+-   Latitude
+
+-   Longitude
+
+-   Sea.Surface.Temp
+
+-   Air.Temp
+
+-   Humidity
+
+-   UWind (East-West daily average)
+
+-   VWind (North-South daily average)
+
+```{r}
+# check if packages can be loaded, i.e. they are already installed
+library(mice)
+library(VIM)
+library(NHANES)
+
+# 01a: load data ---- 
+data(tao)  # in VIM package
+?tao
+table(tao$Year)
+
+# there are only two years and we do not need the numeric value of Year 
+# in the regression model, so convert it to a factor to use it as a categorical value
+tao$Year <- as.factor(tao$Year) 
+
+plot(tao$Air.Temp, tao$Humidity, col=tao$Year)
+
+startMar <- par()$mar  # saves the initial values of the plot window margins,
+# so that you can return to the default settings later.
+par(mar = c(0, 0, 0, 0) + 0.1) # Temporarily sets plot margins to be very small # this makes certain plots (like md.pattern() or aggr()) fit better in the plotting area.
+
+# here come plot function working with specified margins from above
+md.pattern(tao, rotate.names = TRUE) 
+```
+
+#### `md.pattern(tao, rotate.names = TRUE)`
+
+From the **`mice`** package (and also available in `VIM`), this function shows a **matrix-style visualization of missing data patterns**:
+
+-   Rows represent patterns of missingness in observations.
+
+-   Columns represent variables.
+
+-   The bottom row shows the count of missing values per variable.
+
+`rotate.names = TRUE` rotates variable names vertically to fit better.
+
+```{r}
+
+# when done with plot functions, reset the margins to the initial setting via
+par(mar = startMar)
+
+summary(tao)
+aggr(tao)
+```
+
+#### `aggr(tao)`
+
+From the **VIM** package — creates a **graphical summary of missing values**, showing:
+
+-   The proportion of missing data per variable.
+
+-   Combinations of missingness between variables.
+
+    This helps diagnose missing data structure visually.
+
+## 02b: Questions regarding the output to the above commands.
+
+How many observations have a missing value for *humidity*?
+
+\- 93, which can be seen in the md.pattern plot at the bottom.
+
+How many observations have more than one missing value?
+
+\- The last column (on the right, labeled #Missing or sometimes unlabelled) shows how many variables are missing for that pattern.
+
+This example:
+
+-   The first row (565) has 0 missing → 565 complete cases.
+
+-   The second row (90) has 1 missing → 90 cases missing Humidity.
+
+-   The third row (77) has 1 missing → 77 cases missing Air.Temp.
+
+-   The remaining rows have 2 or 3 missing values each.
+
+    → 4 observations with 2 or more missing values.
+
+## 02c: interpreting a margin plot
+
+```{r}
+any.missing <- !complete.cases(tao)
+marginplot(tao[, c("Air.Temp", "Humidity")])
+marginplot(tao[, c("Air.Temp", "Sea.Surface.Temp")])
+```
+
+The marginplots show information about the joint behaviour of two variables. In the centre is a scatter plot for the non-missing observations. On the left and bottom there are box plots for that variable, red for the observations where the other variable is missing and blue for observations where the other variable is known. Next to that is a dot plot equivalent to the red box plot. The number in the bottom left shows the number of cases missing for both variables. There is quite a noticeable difference between the red and blue box plots implying that univariate imputation will not give good results.
+
+## 02d: linear model for imputation
+
+```{r}
+# You will use the same longish model specification several times in Exercise 2, 
+# so let's give the "formula" a short name.
+tao.model <- formula(Sea.Surface.Temp ~ Year + Longitude + Latitude + Air.Temp + 
+                       Humidity + UWind + VWind)
+# fit a linear regression model to the "fully known" observations
+lm.knowns <- lm(tao.model, data=tao)
+summary(lm.knowns)
+```
+
+a)  What happened to the data with the missing values during the model fit?
+
+    R’s **`lm()`** function by default uses **`na.action = na.omit`** (unless changed).
+
+    That means:
+
+    -   Any observation (row) that has **at least one missing value** in **any** of the variables used in the model (the response or predictors) ➜ is **automatically removed** before fitting the model.
+
+        So in our case:
+
+    <!-- -->
+
+    -   Observations missing `Sea.Surface.Temp`, `Air.Temp`, or `Humidity` (and possibly others) ➜ are **excluded** entirely from the regression.
+
+        Given our earlier `md.pattern()` output:
+
+    <!-- -->
+
+    -   We have **565 complete cases** (no missing values).
+
+    -   Those are the rows actually used in the model.
+
+    -   The remaining rows (with 1–3 missing values) are **ignored**.
+
+    -   So the regression was fit on **565 observations** only.
+
+b)  How good is your model?
+
+    The model explains **about 98% of the variance** in sea surface temperature.\
+    The predictors are **highly significant overall**.\
+    The fit is **excellent** in terms of R².
+
+    However — a few caveats:
+
+    -   The high R² may reflect strong correlations among environmental variables (e.g., Air.Temp and Sea.Surface.Temp are often closely linked).
+
+    -   Missing data rows are excluded, which may bias the model if missingness is not random (e.g., if temperature sensors failed under certain conditions).
+
+# 03: Exercise: univariate imputation
+
+## 03a: Mean imputation
+
+```{r}
+mean.replace <- function(x) {
+  idx <- is.na(x)  # returns a logical indicator for missing values in x
+  known.mean <- mean(x, na.rm = TRUE) 
+  x[idx] <- known.mean
+  
+  return(x)
+}   
+
+# check using a test variable
+tt <- c(1:10, NA, NA, 99)
+tt
+mean(tt, na.rm = TRUE)
+mean.replace(tt)
+
+hist(tao$Air.Temp)
+
+# impute the Air.Temp using mean replacement
+mrep.Air.Temp <- mean.replace(tao$Air.Temp)
+hist(mrep.Air.Temp)
+
+# Now it's your turn: do what you learnt above with all variables
+# and as always: you have to replace the '???' part in the following expressions
+tao.mrep <- tao
+tao.mrep$Air.Temp <- mrep.Air.Temp
+tao.mrep$Sea.Surface.Temp <- mean.replace(tao$Sea.Surface.Temp)
+tao.mrep$Humidity <- mean.replace(tao$Humidity)
+
+with(tao.mrep, plot(Air.Temp, Sea.Surface.Temp, col = Year))
+
+# NB: with(data.frame,command(...)) runs command(...) knowing that variable 
+# names are to be found in data.frame
+
+any.missing <- !complete.cases(tao)
+with(tao.mrep, plot(Air.Temp, Humidity, col = 1 + any.missing)) #colour the imputed vales red. 
+
+```
+
+### What can you learn from the obtained graph?
+
+We can learn
+
+-   which observation values were previously missing.
+
+-   how those observations are distributed according to other variables. –\> potential correlation of missingness to other variable like values for humidity are only missing if temperature is below 25
+
+-   if the mean imputation "makes sense" and distributes the missing values similarly to the non-missing values for those observations –\> in this case, the mean for humidity seems to work, while that for air.temp is not so good because there are two clusters and the mean is in between of those
+
+```{r}
+lm.mrep <- lm(tao.model, data = tao.mrep)
+summary(lm.mrep)
+```
+
+### Compare the outcome to `summary(lm.knowns)`. What do you observe?
+
+The model performed worse, now with higher Residual standard error of 0.5538 and only explaining 94.91% of the variance in Sea Surface Temp.
+
+## 03b: mean/variance Simulation
+
+```{r}
+mean.sd.replace <- function(x) {
+  idx <- is.na(x)
+  known.mean <- mean(x, na.rm = TRUE) 
+  known.sd <- sd(x, na.rm = TRUE) 
+  x[idx] <- rnorm(sum(idx), known.mean, known.sd)
+  
+  return(x)
+}   
+
+# Check your function:
+tt <- c(1:10, NA, NA, 95)
+tt
+mean.sd.replace(tt)
+round(mean.sd.replace(tt), 2)
+
+hist(tao$Air.Temp)
+# impute the Air.Temp using mean/variance simulation
+msdrep.Air.Temp <- mean.sd.replace(tao$Air.Temp)
+hist(msdrep.Air.Temp)
+
+# Now work on the complete data set
+tao.msdrep <- tao
+tao.msdrep$Air.Temp <- msdrep.Air.Temp
+tao.msdrep$Sea.Surface.Temp <- mean.sd.replace(tao$Sea.Surface.Temp)
+tao.msdrep$Humidity <- mean.sd.replace(tao$Humidity)
+with(tao.msdrep, plot(Air.Temp, Humidity, col = Year))
+with(tao.msdrep, plot(Air.Temp, Humidity, col = 1 + any.missing))
+
+lm.msdrep <- lm(tao.model, data = tao.msdrep)
+summary(lm.msdrep)
+```
+
+Compare the outcome to `summary(lm.knowns)` and `summary(lm.mrep)`. What do you observe?
+
+The model performs even worse, now with higher Residual standard error of 0.6309 and only explaining 93.42% of the variance in Sea Surface Temp.
+
+## 03c: Direct Random Sampling
+
+```{r}
+dir.rand.samp <- function(x) {  
+  idx <- is.na(x)
+  x[idx] <- sample(x[!idx], size = sum(idx), replace = TRUE)
+  
+  return(x)
+}   
+
+# check your function
+tt
+dir.rand.samp(tt)
+# and again
+dir.rand.samp(tt)
+# Why?!
+
+tao.drs <- tao
+tao.drs$Air.Temp <- dir.rand.samp(tao$Air.Temp)
+tao.drs$Sea.Surface.Temp <- dir.rand.samp(tao$Sea.Surface.Temp)
+tao.drs$Humidity <- dir.rand.samp(tao$Humidity)
+hist(tao.drs$Air.Temp)
+
+with(tao.drs, plot(Air.Temp, Humidity, col = Year))
+with(tao.drs, plot(Air.Temp, Humidity, col = 1 + any.missing))
+
+lm.drs <- lm(tao.model, data = tao.drs)
+summary(lm.drs)
+```
+
+The model performs similarly bad, now with higher Residual standard error of 0.6374 and only explaining 93.29% of the variance in Sea Surface Temp.
+
+```{r}
+# Now compare the coefficients from all four univariate methods
+cbind(lm.knowns$coefficients,
+      lm.mrep$coefficients,
+      lm.msdrep$coefficients,
+      lm.drs$coefficients)
+```
+
+The disadvantage with all univariate methods, is that they do not consider any co-dependencies with other variables. With most data there is codependency (correlation) between some variables, which can and should be incorporated into our imputation method.
+
+# 04: Exercise: Multivariate imputation using Gibbs sampling
+
+## 04a: Gibbs sampling via `mice()`
+
+Using multivariate imputation, we can use the information from Year, Sea.Surface.Temp etc. to get more realistic imputed values. The function mice() calls the Gibbs sampling routine. Parameters maxit = 50 and m = 5 have been specified. This means that 50 full iterations of the Gibbs sample are run and the last 5 will be used for the imputation. This means that we get 5 versions of the imputed data.
+
+More Information:
+
+-   MICE: Multiple Imputation by Chained Equations
+
+-   Gibbs sampling (GS) is applied which is a Bayesian simulation technique that
+    samples from the conditional distributions in order to obtain samples from the
+    joint distribution
+
+-   Slides 22ff.
+
+```{r}
+GibbsData  <-  mice(tao, m = 5, maxit = 50, meth = 'pmm', seed = 600)
+
+```
+
+# 04b: completed data
+
+Only the imputed values are stored in GibbsData. To get a full data set with known and imputed values use complete().
+
+```{r}
+Gibbsdata1 <- complete(GibbsData, 1)
+
+# plot with missing values in red
+with(Gibbsdata1, plot(Air.Temp, Sea.Surface.Temp, col = Year))
+with(Gibbsdata1, plot(Air.Temp, Sea.Surface.Temp, col = 1 + any.missing))
+
+# visual inspection!
+# And? Are you impressed? If not think about what happened!
+
+lm.Gibbs1 <- lm(tao.model, data=Gibbsdata1)
+summary(lm.Gibbs1)
+round(cbind(lm.knowns$coefficients,
+            lm.mrep$coefficients,
+            lm.msdrep$coefficients,
+            lm.drs$coefficients,
+            lm.Gibbs1$coefficients), 4)
+
+```
+
+## 04c: linear model with all imputed data
+
+The with() function runs the lm() function 5 times, once for each of the imputed data sets. N.B. with() is a generic function. Because GibbsData has class "mids" (=“multiply imputed data set”) the method/function with.mids() is called. This runs the lm() function individually on each of the 5 imputed data sets.
+
+```{r}
+# run lm on all 5 complete data sets
+lm.Gibbs.all <- with(GibbsData, 
+                     lm(Sea.Surface.Temp ~ Year + Longitude + Latitude +
+                          Air.Temp + Humidity + UWind + VWind))
+# the result of each on 
+lm.Gibbs.all$analyses 
+
+# summary(lm.obj) for each of the 5 lms.
+lapply(lm.Gibbs.all$analyses, summary)
+round(sapply(lm.Gibbs.all$analyses, coefficients), 4)
+ 
+```
+
+## 03d: pooled results 
+To aggregate the results of several models, use the pool() function.
+```{r}
+summary(pool(lm.Gibbs.all))
+```
+
+
+## 03e: final model
+Choose a final model.
+```{r}
+lm.Gibbs.all.final <- with(GibbsData,
+                           lm(Sea.Surface.Temp ~ Year + Longitude + Latitude + 
+                                Air.Temp + Humidity + VWind))
+summary(pool(lm.Gibbs.all.final))
+
+```
+
+# 05: Imputing missing data for the Diabetes data set
+In Machine Learning 1 you used the data set Diabetes which contained just 3 variables. The
+data were obtained from the NHANES data (American National Health and Nutrition Examination surveys) which is provided as a package in R.
+The data set used in this week’s lectures comes from the same source but uses 13 variables. The code to create this is given in the workshop’s R code. In total there are n=10 000
+observations, but there are only 6492 observations with no missing values.
+You will now use mice() to impute the missing values for these 13 variables.
+
+## 05a: data handling
+Load the data and store the 13 variables in the data frame Diabetes. Inspect the missing values.
+```{r}
+library(NHANES)
+data("NHANES")
+?NHANES
+colsOfInterest <- c("Diabetes", "Gender", "Race1", "BMI", "Age", "Pulse", 
+                    "BPSysAve", "BPDiaAve", "HealthGen", "DaysPhysHlthBad",
+                    "DaysMentHlthBad", "LittleInterest", "Depressed")
+Diabetes2 <- NHANES[ , colsOfInterest]
+table(Diabetes2$Diabetes)
+
+# convert Diabetes variable to be a binary outcome for logistic regression
+Diabetes2$Diabetes <- as.numeric(Diabetes2$Diabetes) - 1
+
+par(mar = c(0, 0, 0, 0) + 0.1)
+md.pattern(Diabetes2, rotate.names = TRUE) 
+par(mar=startMar)
+
+summary(Diabetes2)
+aggr(Diabetes2)
+
+any.missing <- !complete.cases(Diabetes2)
+```
+
+# 05b: Multivariate imputation
+Run the Gibbs sampler on the Diabetes2 data. Because this data set is much larger
+than in Exercise 3, the Gibbs sampler takes much longer to run. The total number of
+iterations is reduced to 10 which takes roughly 3 minutes to run. This is sufficient for
+a Workshop, in practice it is better to use a longer burn-in period.
+```{r}
+# this will take a while!
+#GibbsDiabetes <- mice(???, m = 5, maxit = 10, meth = 'pmm', seed = 700)
+
+```
+
+
+
