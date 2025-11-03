@@ -1,0 +1,414 @@
+---
+title: "Exercise 04: Support vector classifiers"
+format: html
+editor: visual
+---
+
+```{r}
+# check if packages can be loaded, i.e. they are already installed
+library(ISLR2)
+library(MASS)
+library(e1071) # package of which we use the 'svm()' function
+library(pROC)
+library(naivebayes)
+```
+
+## 2 R Exercises
+### 2.1 Introductory example
+Work through Section 9.6.1 in James et al. on page 389, which applies the svm() function to a
+small simulated data set. Read the text carefully! Notice in particular, that in e1071 the cost
+is defined differently as in the notes, so a large cost gives a small margin. Also I find that the
+scatter plot of an object of class svm is poor, in particular some p_x1 are hard to see, as they
+are partially cut off. I extend the graphics margins a little using e.g. plot(svmfit, dat, xlim = c(-2.1, 2.4), ylim = c(-1.4, 2.7))}.
+
+We begin by generating the observations, which belong
+to two classes, and checking whether the classes are linearly separable.
+```{r}
+set.seed(1)
+x <- matrix(rnorm (20 * 2), ncol = 2)
+y <- c(rep(-1, 10) , rep(1, 10))
+x[y == 1, ] <- x[y == 1, ] + 1
+plot(x, col = (3 - y))
+```
+
+They are not. Next, we fit the support vector classifier. Note that in order
+for the svm() function to perform classification (as opposed to SVM-based
+regression), we must encode the response as a factor variable. We now
+create a data frame with the response coded as a factor.
+
+```{r}
+dat <- data.frame(x = x, y = as.factor(y))
+svmfit <- svm(y~ ., data = dat , kernel = "linear", cost = 10, scale = FALSE)
+```
+
+The argument scale = FALSE tells the svm() function not to scale each
+feature to have mean zero or standard deviation one; depending on the
+application, one might prefer to use scale = TRUE.
+We can now plot the support vector classifier obtained:
+```{r}
+plot(svmfit, dat, xlim = c(-2.1, 2.4), ylim = c(-1.4, 2.7))
+```
+
+Note that the two arguments to the SVM plot() function are the output
+of the call to svm(), as well as the data used in the call to svm(). The region
+of feature space that will be assigned to the−1 class is shown in light
+yellow, and the region that will be assigned to the +1 class is shown in
+red. The decision boundary between the two classes is linear (because we
+used the argument kernel = "linear"), though due to the way in which the
+plotting function is implemented in this library the decision boundary looks
+somewhat jagged in the plot. (Note that here the second feature is plotted
+on the x-axis and the first feature is plotted on the y-axis, in contrast to the behavior of the usual plot() function in R.) The support vectors are
+plotted as crosses and the remaining observations are plotted as circles;
+we see here that there are seven support vectors. We can determine their
+identities as follows:
+
+```{r}
+svmfit$index
+```
+
+We can obtain some basic information about the support vector classifier
+fit using the summary() command:
+```{r}
+summary(svmfit)
+```
+
+This tells us, for instance, that a linear kernel was used with cost = 10,
+and that there were seven support vectors, four in one class and three in
+the other.
+What if we instead used a smaller value of the cost parameter?
+
+```{r}
+svmfit <- svm(y~ ., data = dat , kernel = "linear", cost = 0.1, scale = FALSE )
+plot(svmfit, dat, xlim = c(-2.1, 2.4), ylim = c(-1.4, 2.7))
+svmfit$index
+```
+
+Now that a smaller value of the cost parameter is being used, we obtain a
+larger number of support vectors, because the margin is now wider. Unfor-
+tunately, the svm() function does not explicitly output the coeﬀicients of
+the linear decision boundary obtained when the support vector classifier is
+fit, nor does it output the width of the margin.
+The e1071 library includes a built-in function, tune(), to perform cross-
+validation. By default, tune() performs ten-fold cross-validation on a set
+of models of interest. In order to use this function, we pass in relevant
+information about the set of models that are under consideration. The
+following command indicates that we want to compare SVMs with a linear
+kernel, using a range of values of the cost parameter.
+```{r}
+set.seed(1)
+tune.out <- tune(svm , y~ ., data = dat , kernel = "linear", 
+                 ranges = list(cost = c(0.001 , 0.01 , 0.1, 1, 5, 10, 100)))
+```
+
+We can easily access the cross-validation errors for each of these models
+using the summary() command:
+```{r}
+summary(tune.out)
+```
+
+We see that cost = 0.1 results in the lowest cross-validation error rate. The
+tune() function stores the best model obtained, which can be accessed as
+follows:
+
+```{r}
+bestmod <- tune.out$best.model
+summary(bestmod)
+```
+
+The predict() function can be used to predict the class label on a set of
+test observations, at any given value of the cost parameter. We begin by
+generating a test data set.
+
+```{r}
+xtest <- matrix(rnorm (20 * 2), ncol = 2)
+ytest <- sample(c(-1, 1), 20, rep = TRUE)
+xtest[ytest == 1, ] <- xtest[ytest == 1, ] + 1
+testdat <- data.frame(x = xtest , y = as.factor(ytest))
+```
+
+Now we predict the class labels of these test observations. Here we use the
+best model obtained through cross-validation in order to make predictions.
+
+```{r}
+ypred <- predict(bestmod , testdat)
+table( predict = ypred , truth = testdat$y)
+```
+
+Thus, with this value of cost, 17 of the test observations are correctly
+classified. What if we had instead used cost = 0.01?
+
+```{r}
+svmfit <- svm(y~ ., data = dat , kernel = "linear", cost = .01, scale = FALSE)
+ypred <- predict(svmfit , testdat)
+table( predict = ypred , truth = testdat $y)
+```
+
+In this case three additional observations are misclassified.
+Now consider a situation in which the two classes are linearly separable.
+Then we can find a separating hyperplane using the svm() function. We
+first further separate the two classes in our simulated data so that they are
+linearly separable:
+
+```{r}
+x[y == 1, ] <- x[y == 1, ] + 0.5
+plot(x, col = (y + 5) / 2, pch = 19)
+```
+
+Now the observations are just barely linearly separable. We fit the support
+vector classifier and plot the resulting hyperplane, using a very large value
+of cost so that no observations are misclassified.
+
+```{r}
+dat <- data.frame(x = x, y = as.factor(y))
+svmfit <- svm(y~ ., data = dat , kernel = "linear",cost = 1e5)
+summary(svmfit)
+plot(svmfit, dat, xlim = c(-2.1, 2.4), ylim = c(-1.4, 2.7))
+```
+
+No training errors were made and only three support vectors were used.
+However, we can see from the figure that the margin is very narrow (because
+the observations that are not support vectors, indicated as circles, are very
+close to the decision boundary). It seems likely that this model will perform
+poorly on test data. We now try a smaller value of cost:
+
+```{r}
+svmfit <- svm(y~ ., data = dat , kernel = "linear", cost = 1)
+summary(svmfit)
+plot(svmfit, dat, xlim = c(-2.1, 2.4), ylim = c(-1.4, 2.7))
+```
+
+Using cost = 1, we misclassify a training observation, but we also obtain a
+much wider margin and make use of seven support vectors. It seems likely
+that this model will perform better on test data than the model with
+cost = 1e5.
+
+
+### 2.2 College data set
+
+In the workshop dealing with GAM models you developed a model for predicting the number of students accepted to different colleges and universities in the USA. As support vector
+machines are a binary classifier, we will this time predict the variable Private, whether the
+college is private yes or public no.
+
+Short notes are given in the R file as comments. The overall approach and a few longer comments are given here.
+
+a) You will start by defining a training data set and a test data set. The test data are set
+aside and used for evaluation at the end.
+
+```{r}
+# 01: load data ----------------------------------------------------------------
+data("College", package = "ISLR2")
+
+# 02: descriptive stats and data preparation -----------------------------------
+dim(College)
+table(College$Private)
+summary(College)
+
+# From previous exercises we know that some variables were very skewed.
+# E.g. Accept
+hist(College$Accept)
+
+# It is easier if we define new variables with the log data for four variables
+# and append them to the data frame College before we create training and test 
+# data sets
+College$lAccept <- log(College$Accept)
+College$lApps <- log(College$Apps)
+College$lF.Undergrad <- log(College$F.Undergrad)
+College$lExpend <- log(College$Expend)
+
+# Create training and test data set with 80/20 split
+set.seed(2)
+train_share <- 0.8
+train_idx <- sample(1:nrow(College), size = as.integer(nrow(College) * 0.8))
+Colltrain <- College[train_idx, ]
+Colltest <- College[-train_idx, ]
+```
+
+b) Fit an SVM model using two variables log(Accept) and PhD to predict Private. For now
+use a cost parameter of c = 0.1, no scaling and linear kernel.
+
+```{r}
+# 03: simple 2-variable model --------------------------------------------------
+# first SVM model on two variables
+svm_01 <- svm(Private ~ lAccept + PhD, data = Colltrain,  
+               kernel = "linear", cost = 0.1, scale = FALSE)
+
+```
+
+c) To obtain the SVM plot, you need to specify which two variables should be plotted in
+on the y and x axis using lAccept ~ PhD.
+
+```{r}
+# visualisation
+plot(svm_01, Colltrain, lAccept ~ PhD)
+
+# model summary
+summary(svm_01)
+```
+
+d) Obtain the confusion matrix and the accuracy for this and each further model.
+
+```{r}
+# obtain the confusion matrix (training data)
+ypred <- predict(svm_01, newdata = Colltrain)
+table(ypred, Colltrain$Private)
+
+# and the proportion of the correctly predicted values (accuracy)
+sum(diag(prop.table(table(ypred, Colltrain$Private))))
+
+# make sure you understand why this gives the desired result
+```
+
+e) When fitting a three variable model, we have to choose which two variables to plot.
+This means we choose a value for the third variable. The default value is 0,
+which is rarely a good choice. The second plot for this model uses the argument
+slice=list(lExpend = 9) which is approximately the mean value of the variable
+lExpend. Try varying this value to see the effect it has on the visual representation
+of the boundary. Note this argument only changes the graphical representation; the
+model and the boundary remain unchanged.
+Keep in mind: The scatter plot can be helpful to investigate SVM models for small data
+sets with just two variables but is not so helpful in practice.
+
+```{r}
+# 04: 3-variable model ---------------------------------------------------------
+# except an additional variable all other settings remain the same
+svm_02 <- svm(Private ~ lAccept + PhD + lExpend, data = Colltrain, kernel = "linear", cost = 0.1, scale = FALSE)
+plot(svm_02, Colltrain, lAccept ~ PhD)
+
+# Read the notes in the worksheet about this diagram
+lemean <- mean(Colltrain$lExpend)
+
+# Specify that the underlying value for lExpend should be the approx mean value 
+plot(svm_02, Colltrain, lAccept ~ PhD, slice = list(lExpend = 9))
+
+# Recap: Why do we use the value `lExpend = 9`?
+
+# Try out the above command with different "slice values"
+
+lesd <- sd(Colltrain$lExpend)
+lesd
+plot(svm_02, Colltrain, lAccept ~ PhD, slice = list(lExpend = lemean - lesd))
+
+plot(svm_02, Colltrain, lAccept ~ PhD, slice = list(lExpend = lemean + lesd))
+
+
+# Further model diagnostics
+summary(svm_02)
+ypred <- predict(svm_02, newdata = Colltrain)
+table(ypred, Colltrain$Private)
+
+# and the proportion of the correctly predicted values (accuracy)
+sum(diag(prop.table(table(ypred, Colltrain$Private))))
+
+# better than before?
+```
+
+f) Now fit an SVM model with all the variables used for GAM modelling in the corresponding exercise.
+```{r, warning=TRUE}
+# 05: full model ---------------------------------------------------------------
+# Now try all the variables available used in the GAM exercise
+mod_full <- Private ~ lAccept + lApps + lF.Undergrad + Room.Board + lExpend + 
+  S.F.Ratio + PhD
+
+svm_03 <- svm(mod_full, data = Colltrain, kernel = "linear", cost = 0.1, scale = FALSE)
+
+# That warning is not good
+warning("I'm actually not getting a warning here, maybe it's because the package has a newer version.")
+
+```
+
+
+g) Since there is a warning that the maximum number of iterations has been reached,
+and implying the iterative algorithm has not converged. It would be possible to increase the maximum number of iterations, but we’ll try another approach, scaling the
+input data, which is easily done using the argument scale = TRUE.
+Why does scaling change the outcome?
+```{r}
+# We'll try scaling the data before running (which is the default setting)
+svm_04 <- svm(mod_full, data = Colltrain, kernel = "linear", cost = 0.1, scale = TRUE)
+
+# model diagnostics
+summary(svm_04)
+ypred <- predict(svm_04, newdata = Colltrain)
+table(ypred, Colltrain$Private)
+
+# and the proportion of the correctly predicted values (accuracy)
+sum(diag(prop.table(table(ypred, Colltrain$Private))))
+
+# Actually the predictions are very similar whether scaling is used or not, 
+# but we should always be wary of a WARNING: reaching max number of iterations
+```
+
+
+h) As in Exercise 2.1, use tune() to find the optimal value for the cost parameter.
+Note: I found two different optimal cost values when running the code several times.
+The cross validation method uses 10-Fold C.V. so a random number generator is used
+to define the folds. The results are similar whichever of these “optimal values” are
+used.
+
+```{r}
+# 05: CV for optimal costs -----------------------------------------------------
+# now investigate the best cost value using cross validation
+tune_01 <- tune(svm, mod_full, data = Colltrain, kernel = "linear", 
+                scale = TRUE,
+                ranges = list(cost = c(0.001, 0.01, 0.1, 0.5, 1, 5, 10, 50)))
+# Further model diagnostics
+summary(tune_01)
+
+best_svm <- tune_01$best.model
+summary(best_svm)
+ypred <- predict(best_svm, Colltrain)
+table(ypred, Colltrain$Private)
+sum(diag(prop.table(table(ypred, Colltrain$Private))))
+
+# the accuracy on the training data best model is slightly better
+```
+
+i) Obtain an ROC plot for the final model using the library pROC. The ROC function needs
+the probabilities of Private=Yes, which can be obtained from svm() and predict()
+by using the argument prob=TRUE. The way of accessing the probabilities is not
+particularly pretty; we want the first column of the matrix accessed using attr(ypred,
+"probabilities").
+
+```{r}
+# 06: ROC analysis -------------------------------------------------------------
+# We need to re-run the SVM so that the algorithm returns probabilities for how 
+# likely a college private is using the 'prob = TRUE' argument
+svm_05 <- svm(mod_full, data = Colltrain, prob = TRUE, kernel = "linear", cost = 0.1, scale = TRUE)
+
+# two steps required to extract the probabilities 
+ypred <- predict(svm_05, Colltrain, prob = TRUE)  
+# since the probs are stored as án attribute, we need the next lineof code
+ypredp <- attr(ypred, "probabilities")[, "Yes"]
+
+# create a ROC object and plot it
+roc_obj_train  <-  roc(Colltrain$Private, ypredp)
+ggroc(roc_obj_train)
+auc(roc_obj_train)
+```
+
+j) Finally obtain the predictions on the test data and the corresponding ROC-plot.
+```{r}
+# 07: model evaluation on test data --------------------------------------------
+ypred <- predict(svm_05, newdata = Colltest)
+table(ypred, Colltest$Private)
+sum(diag(prop.table(table(ypred, Colltest$Private))))
+
+ypred_test <- predict(svm_05, newdata = Colltest, prob = TRUE)
+ypred_testp <- attr(ypred_test, "probabilities")[,1]
+roc_obj_test  <-  roc(Colltest$Private, ypred_testp)
+ggroc(list(train = roc_obj_train, test = roc_obj_test))
+auc(roc_obj_train)
+auc(roc_obj_test)
+
+```
+
+
+k) Compare the results you obtain using Naive Bayes Classification to the SVM approach.
+Which method performs better?
+l) Write a few sentences summarizing the results of applying SVM methods to these data.
+
+
+
+
+
+
+

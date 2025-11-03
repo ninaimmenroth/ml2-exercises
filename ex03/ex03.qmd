@@ -1,0 +1,204 @@
+---
+title: "Exercise 03: Conditional Independence and Naive Bayes Classification"
+format: html
+editor: visual
+---
+
+```{r}
+#| warning: false
+library(ISLR2)
+library(Hmisc)
+library(MASS)
+library(naivebayes)
+library(e1071)
+library(pROC)
+library(modeldata)
+library(rsample)
+library(DT)
+
+```
+
+# 3 R exercises
+## 3.1 Titanic data: a simple example
+We will repeat the Titanic example in Zhang using slightly different code given below. The
+function naiveBayes is part of the R package e10712
+
+### 3.1.1 Data handling
+Start by loading the Titanic data and reading its documentation:
+```{r}
+data("Titanic", package = "datasets")
+?Titanic
+```
+Note that the data is in the form of a 3-dimensional array that contains frequencies. It is
+possible to pass frequency data into e11071::naiveBayes() but it is much easier to analyse
+the results, when it is in the classic data.frame format with one row per passenger.
+```{r}
+# Convert data to a data frame and inspect it
+titanic_df <- as.data.frame(Titanic) # uses the method `as.data.frame.table`
+# inspect the data:
+# - titanic_df has one row for each combination of Class, Sex, Age and Survived,
+# - along with the frequency for this combination
+datatable(titanic_df)
+# Expand the number of rows to correspond to the frequencies
+# This repeats each combination equal to the frequency of each combination
+repeating_sequence <- rep(1:nrow(titanic_df), times = titanic_df$Freq)
+titanic_df <- titanic_df[repeating_sequence, names(titanic_df) != "Freq"]
+# Check if rows in 'long' data fits to observations in original data
+stopifnot(sum(Titanic) == nrow(titanic_df)) # throws an error if not TRUE
+```
+
+### 3.1.2 Fitting a Naive Bayes model
+Fit the Naive Bayes model using the usual R model fitting notation, and obtain the model
+output.
+```{r}
+nb_titanic <- naiveBayes(Survived ~., data = titanic_df)
+nb_titanic
+```
+
+N.B. In the output, the A-priori probabilities are the counts for Survived divided by the number
+of passengers, but the values stored in nb_titanic$apriori are the counts. As we will be
+using this prior probabilities a lot, store them in an extra object.
+```{r}
+priors_titanic <- prop.table(nb_titanic$apriori)
+```
+
+Note that the conditional probabilities output above are just the observed marginal frequencies from the data. These could be obtained by getting a table of absolute frequencies with
+table() and then calculating the relative row frequencies using prop.table(, margin = 1)
+
+```{r}
+# the pipe operator |> is available in base R since v4.1.0 and makes better
+# readable to an large extent
+# details: https://www.datacamp.com/tutorial/pipe-r-tutorial
+table(titanic_df$Survived) |> prop.table()
+table(titanic_df$Survived, titanic_df$Class) |> prop.table(margin = 1)
+table(titanic_df$Survived, titanic_df$Sex) |> prop.table(margin = 1)
+table(titanic_df$Survived, titanic_df$Age) |> prop.table(margin = 1)
+```
+
+The posterior probabilities for a second class passenger are obtained using:
+```{r}
+# Given second class passenger -------------------------------------------------
+# prior
+priors_titanic
+# proportional posterior probabilities
+posterior_titanic_2nd <- priors_titanic * nb_titanic$tables$Class[, "2nd"]
+posterior_titanic_2nd
+# actual posterior probabilities: normalized so that they add up to 1
+posterior_titanic_2nd/sum(posterior_titanic_2nd)
+```
+
+Now we repat the above steps for a child travelling in the second class:
+```{r}
+# Given second class passenger and child ---------------------------------------
+posterior_titanic_2nd_child <- priors_titanic *
+nb_titanic$tables$Class[, "2nd"] *
+nb_titanic$tables$Age[, "Child"]
+# actual posterior probability (adds up to 1)
+# the same normalisation as division by `sum` via `prop.table()`
+prop.table(posterior_titanic_2nd_child)
+```
+
+Task: Obtain the posterior probabilities given a third class adult male, and state the predicted
+value for such a passenger.
+
+```{r}
+# Given third class passenger and male ---------------------------------------
+posterior_titanic_3rd_male <- priors_titanic *
+nb_titanic$tables$Class[, "3rd"] *
+nb_titanic$tables$Sex[, "Male"]
+# actual posterior probability (adds up to 1)
+# the same normalisation as division by `sum` via `prop.table()`
+prop.table(posterior_titanic_3rd_male)
+```
+
+The predict() function gives the model predictions for Survived based on the posterior probabilities given the information on each passenger. The confusion matrix is then printed, with
+the sensitivity, specificity and the misclassification rate.
+```{r}
+nb_pred <- predict(nb_titanic, titanic_df)
+#Confusion matrix to check accuracy
+conf_mat <- table(nb_pred, titanic_df$Survived)
+conf_mat
+# sensitivity
+conf_mat[2,2]/sum(conf_mat[,2])
+#specificity
+conf_mat[1,1]/sum(conf_mat[,1])
+#misclassification rate (1-accuracy)
+1 - sum(diag(conf_mat))/sum(conf_mat)
+```
+
+For these data the NB model gives poor sensitivity but the specificity is good.
+To obtain a ROC plot and the AUC for this classification we need the predicted posterior
+probabilities for each passenger. The function predict() for an object of class naiveBayes
+will output these when specifying the argument type = "raw". The relevant code is
+```{r}
+library(pROC)
+pred_prob_nb <- predict(nb_titanic, newdata = titanic_df, type = "raw")
+head(pred_prob_nb)
+roc_nb <- roc(titanic_df$Survived, pred_prob_nb[, "Yes"])
+ggroc(roc_nb)
+auc(roc_nb)
+```
+
+### 3.1.3 Can you do better with logistic regression?
+Check if a logistic regression would perform better?
+```{r}
+logit_01 <- glm(Survived ~ ., data = titanic_df, family = binomial())
+pred_prob_logit_01 <- predict(logit_01, newdata = titanic_df,
+type = "response")
+head(pred_prob_logit_01)
+roc_logit_01 <- roc(titanic_df$Survived, pred_prob_logit_01)
+ggroc(list(NB = roc_nb, Logit = roc_logit_01))
+auc(roc_logit_01)
+```
+
+# To Do!
+What interactions might be worth being considered? Improve your model and compare to
+NB and logistic regression without interactions.
+
+```{r}
+# your code here: women and children first
+
+```
+
+## 3.2 Quitting your job?
+The IBM attrition data set in the modeldata library, contains data on “employee attrition”,
+which means employees leaving the company.
+Proceed with the following steps:
+• Load the packages modeldata and rsample,
+• load the data set attrition to the global environment and
+• read the very short help page for the data set.
+
+```{r}
+data("attrition", package = "modeldata")
+?attrition
+```
+
+### 3.2.1 Data preprocessing
+There are two categorical variables which are still coded as numbers but should be factor
+variables. Convert these variables, then define a training and test data set using the functions
+initial_split, training and testing, which are part of the package rsample.
+```{r}
+attrition$JobLevel <- as.factor(attrition$JobLevel)
+attrition$StockoptionLevel <- as.factor(attrition$StockOptionLevel)
+set.seed(1)
+split_data <- initial_split(attrition, prop = 0.7, strata = "Attrition")
+train <- training(split_data)
+test <- testing(split_data)
+prop.table(table(train$Attrition))
+prop.table(table(test$Attrition))
+```
+
+Notice that the training and test datasets have been stratified so that both contain the same
+proportion of Yes to No.
+
+Tasks:
+
+#### a) Use Exercise 3.1 as a guide to fit a naive Bayes Model to the test data dependent on
+the following subset of variables:
+```{r}
+model <- Attrition ~ Age + DailyRate + DistanceFromHome + HourlyRate +
+MonthlyIncome + MonthlyRate
+```
+
+
+
